@@ -12,16 +12,16 @@ in development mode, with hot reloading applications.
 This is not intended to be actually useful.
 
 ### Building
-docker build -t <image>:<tag> .
+`docker build -t $IMAGE:$TAG .`
 
 ### Running
-docker run --rm -p 5000:5000 <image>:<tag>
+`docker run --rm -p 5000:5000 $IMAGE:$TAG`
 
 ### Simple Tests
 The following curl commands can be used to test that the server returns the expected
 response.
 
-#### Get
+#### GET
 `curl http://127.0.0.1:5000/`
 
 #### POST
