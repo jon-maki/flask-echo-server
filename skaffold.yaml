@@ -1,0 +1,94 @@
+# Simple skaffold continuous development pipeline for our echo server that
+# supports hot-reloading of the application source via the "file sync" API
+# that skaffold provides.
+apiVersion: skaffold/v1
+kind: Config
+metadata:
+  name: flask-echo-server
+build:
+  # *** NOTE ***
+  # Only need to uncomment L16-17 if you haven't run
+  #   `skaffold config set --global local-cluster true`
+  # to globally disable pushing images. This is critical, as we do not want to
+  # use remote docker registries at all while developing this application.
+  # ************
+  # use the local docker daemon to build and do not push images
+  # local:
+  #   push: false
+  # set the tag policy to be the sha256 digest of the image so we know what
+  # to push to k3d during the custom build stage. See `build.sh` for more
+  # information on how this tag is used
+  tagPolicy:
+    sha256: {}
+  # declare the artifacts to build.
+  # We only have the one image in this application. This image name _must_ be the
+  # same name declared in the kubernetes pod manifest so that skaffold knows what
+  # values to replace in that manifest. 
+  artifacts:
+  - image: flask-echo-server-image
+    # the context to build the Dockerfile with
+    context: .
+    # signify that we wish to use a custom build
+    custom:
+      # use our custom build script
+      # this command takes a little while, as it manually invokes docker to build
+      # the desired image, calculates the tag that will be used by skaffold in the
+      # deployment and then manually imports the images into the k3d-created cluster
+      # using the command:
+      #    `k3d import-images $image_repo:$image_tag`
+      # This script could be extended in the future to build specific targets rather 
+      # than the entire image. For example a sufficiently complex python application
+      # could declare a "dev" build target that installs all of the development 
+      # dependencies but not the final image (maybe skip the nginx+gunicorn configuration
+      # steps, or skip packaging the source code, etc.). The `build.sh` script could
+      # simply build that stage and copy the application files in to save some build time.
+      buildCommand: ./build.sh
+      # set up the dependencies that skaffold will watch for rebuild/redeploy and 
+      # file syncing. In this case, we will rebuild whenever things relevant to 
+      # the docker image build context change. You can test this by adding a new
+      # python package to install with pip, such as `requests`.
+      # This is slightly annoying when using `vim`, as the swapfiles that vim creates
+      # are stored alongside the edit file by default. That triggers a full rebuild, 
+      # which we do not want. The easiest workaround I've found for this so far (for 
+      # a custom builder like this one) is to configure your .vimrc to store swapfiles
+      # in a separate location.
+      dependencies:
+        dockerfile:
+          path: ./Dockerfile
+    # set up file sync - we'd like to use the `infer` key here, but that isn't supported
+    # for custom builders. In this case, we have to manually add the "syncable" dependencies
+    # and specify their destination.
+    # It is worth noting the limitations of the sync command (from the skaffold docs):
+    #   1. File sync can only update files that can be modified by the container’s 
+    #      configured User ID.
+    #   2. File sync requires the `tar` command to be available in the container.
+    #   3. Only local source files can be synchronized: 
+    #   4. It is currently not allowed to mix manual and infer sync modes. 
+    sync:
+      manual:
+        # Any python files in the `src/` directory are considered part of this
+        # application.
+      - src: "src/**/*.py"
+        # Since the working directory in the image is set to `/app`, files will 
+        # be synced directly to /app/<filename>.py
+        dest: .
+        # Strip the `src/` prefix off the file, otherwise it will be unpacked to 
+        # /app/src/<filename>.py, which is not where we want it.
+        strip: src/
+# configure the deployment for this app using the provided kubernetes manifest(s)
+deploy:
+  # Use kubectl to deploy to the local `k3d`-managed cluster
+  kubectl:
+    # Deploy manifests directly
+    # skaffold will replace the image name in this manifest with the newly build 
+    # image name and tag any time the image is re-built.
+    manifests:
+    - manifests/flask-echo-server-pod.yaml
+
+# Automatically configure port forwarding to our pod if the `--port-forward` flag 
+# is passed to `skaffold dev`.
+portForward:
+  - resourceType: pod
+    resourceName: flask-echo-server
+    namespace: default
+    port: 5000

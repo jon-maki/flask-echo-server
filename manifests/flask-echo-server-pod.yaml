@@ -1,0 +1,19 @@
+# Simple kubernetes pod deployment for our echo server
+apiVersion: v1
+kind: Pod
+metadata:
+  name: flask-echo-server
+spec:
+  # Just a single container in this pod
+  # In the skaffold.yaml file, we reference this container's image name as the
+  # image we are building. During the deploy stage of the continuous development
+  # pipeline, skaffold will automatically update this manifest file and replace 
+  # the image name with the newly built image and tag, which in this case happens
+  # to be:
+  #   flask-echo-server-image:<sha256 digest of image contents>
+  containers:
+  - name: flask-echo-server
+    image: flask-echo-server-image
+    # Expose port 5000 on this pod so we can port-forward to it
+    ports:
+    - containerPort: 5000
